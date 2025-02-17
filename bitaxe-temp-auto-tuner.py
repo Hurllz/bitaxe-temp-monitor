@@ -40,7 +40,7 @@ power_limit = args.power_limit
 
 # Configuration parameters
 voltage_step = 10  # mV adjustment step
-frequency_step = 5  # MHz adjustment step
+frequency_step = 25  # MHz adjustment step
 min_allowed_voltage = 1000  # mV
 max_allowed_voltage = 1300  # mV
 min_allowed_frequency = 700  # MHz
