@@ -8,7 +8,5 @@
     "enforce_safe_pairing": true,
     "daily_reset_enabled": false,
     "daily_reset_time": "03:00",
-    "flatline_detection_enabled": true,
-    "flatline_hashrate_repeat_count": 5
     "miners": []
 }

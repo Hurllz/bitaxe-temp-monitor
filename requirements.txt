@@ -1,0 +1,5 @@
+Flask
+gunicorn
+pandas
+tkinter
+requests

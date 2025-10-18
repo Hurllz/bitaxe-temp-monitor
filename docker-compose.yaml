@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: bitaxe_autotuner_app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config.json:/app/config.json
+    restart: unless-stopped

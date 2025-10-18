@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitaxe Multi Autotuner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111827; color: #f3f4f6; }
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); }
+        .modal-content { background-color: #1f2937; margin: 10% auto; padding: 20px; border: 1px solid #4b5563; width: 80%; max-width: 1100px; border-radius: 8px; color: #d1d5db; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        #context-menu { display: none; position: absolute; background-color: #374151; border: 1px solid #4b5563; border-radius: 5px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+        #context-menu div { padding: 8px 12px; cursor: pointer; }
+        #context-menu div:hover { background-color: #4b5563; }
+        .btn { background-color: #f59e0b; color: #111827; font-weight: bold; padding: 8px 16px; border-radius: 6px; transition: background-color 0.2s; }
+        .btn:hover { background-color: #fbbf24; }
+        .btn-small { padding: 4px 8px; font-size: 0.8rem; }
+        input, select { background-color: #374151; border: 1px solid #4b5563; border-radius: 4px; padding: 6px; color: #f3f4f6; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #374151; }
+        th { background-color: #1f2937; }
+        #log-output { background-color: #000; color: #0f0; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; }
+        .editing {
+            background-color: #4b5563 !important;
+            outline: 2px solid #f59e0b !important;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <h1 class="text-3xl font-bold text-center text-amber-400 mb-6">- Bitaxe Multi-AutoTuner -</h1>
+
+    <div class="overflow-x-auto shadow-md rounded-lg mb-4">
+        <table id="miners-table">
+            <thead class="bg-gray-700 text-xs uppercase text-gray-300">
+                <tr>
+                    <th scope="col" class="px-6 py-3">Nickname</th>
+                    <th scope="col" class="px-6 py-3">Type</th>
+                    <th scope="col" class="px-6 py-3">IP</th>
+                    <th scope="col" class="px-6 py-3">Freq</th>
+                    <th scope="col" class="px-6 py-3">Voltage</th>
+                    <th scope="col" class="px-6 py-3">Temp</th>
+                    <th scope="col" class="px-6 py-3">VR Temp</th>
+                    <th scope="col" class="px-6 py-3">Hash Rate</th>
+                    <th scope="col" class="px-6 py-3">Watts</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Miner rows will be inserted here -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Main Control Buttons -->
+    <div class="flex justify-center flex-wrap gap-2 mb-4">
+        <button onclick="openScanModal()" class="btn">Scan Network</button>
+        <button onclick="openAddMinerModal()" class="btn">Add Miner</button>
+        <button onclick="openGlobalSettings()" class="btn">Global Settings</button>
+        <button onclick="openAutotunerSettings()" class="btn">AutoTuner Settings</button>
+        <button onclick="saveSettings()" class="btn">Save Settings</button>
+    </div>
+
+    <!-- Start/Stop Buttons -->
+    <div class="flex justify-center gap-4 mb-4">
+        <button id="start-autotuner-btn" onclick="startAutotuning()" class="btn bg-green-500 hover:bg-green-600">Start Autotuner</button>
+        <button id="stop-autotuner-btn" onclick="stopAutotuning()" class="btn bg-red-500 hover:bg-red-600">Stop Autotuner</button>
+    </div>
+
+    <!-- Log Output -->
+    <div id="log-output" class="w-full h-64 p-2 border border-gray-600 rounded-lg overflow-y-scroll"></div>
+
+    <!-- Context Menu -->
+    <div id="context-menu">
+        <div onclick="editMinerSettings()">Edit Miner</div>
+        <div onclick="refreshMiner()">Refresh</div>
+        <div onclick="restartMiner()">Restart Miner</div>
+        <div onclick="openMinerWebUI()">Open Miner Web UI</div>
+        <div class="border-t border-gray-500 mt-1 pt-1" onclick="deleteMiner()">Delete Miner</div>
+    </div>
+    
+    <!-- Modals -->
+    <div id="scan-modal" class="modal"><div class="modal-content"><span class="close" onclick="closeModal('scan-modal')">&times;</span><h2>Scan Network</h2><p>Start IP: <input id="start-ip" value="192.168.1.1"></p><p>End IP: <input id="end-ip" value="192.168.1.255"></p><button onclick="scanNetwork()" class="btn mt-4">Start Scan</button></div></div>
+    <div id="add-miner-modal" class="modal"><div class="modal-content"><span class="close" onclick="closeModal('add-miner-modal')">&times;</span><h2>Add Miner</h2><p>Nickname: <input id="add-nickname"></p><p>IP: <input id="add-ip"></p><button onclick="addMiner()" class="btn mt-4">Add</button></div></div>
+    <div id="global-settings-modal" class="modal"><div class="modal-content"><span class="close" onclick="closeModal('global-settings-modal')">&times;</span><h2>Global Settings</h2><div id="global-settings-form"></div><button onclick="saveGlobalSettings()" class="btn mt-4">Save Global</button></div></div>
+    <div id="autotuner-settings-modal" class="modal"><div class="modal-content"><span class="close" onclick="closeModal('autotuner-settings-modal')">&times;</span><h2>Modify AutoTuner Settings</h2><div id="autotuner-settings-form" class="overflow-x-auto max-h-96"></div><div class="flex justify-center mt-4"><button onclick="saveAutotunerSettings()" class="btn">Save</button></div></div></div>
+
+<script>
+    let contextMenuIp = null;
+    let configData = {};
+    let autotunerClipboard = null;
+    let editingMiners = new Set();
+
+
+    // --- Core Functions ---
+    async function apiCall(url, options = {}) {
+        try {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.message}`);
+            }
+            return response.json();
+        } catch (error) {
+            console.error(`API call to ${url} failed:`, error);
+            logMessage(`Error: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
+    function logMessage(message, level = 'info') {
+        const logOutput = document.getElementById('log-output');
+        const now = new Date().toISOString().slice(11, 19);
+        const levelColors = { info: 'text-gray-300', success: 'text-green-400', warning: 'text-yellow-400', error: 'text-red-400' };
+        const colorClass = levelColors[level] || 'text-gray-300';
+        logOutput.innerHTML += `<div class="${colorClass}">[${now}] ${message}</div>`;
+        logOutput.scrollTop = logOutput.scrollHeight;
+    }
+    
+    // --- Miner Table & Data ---
+    async function unifiedRefresh() {
+        try {
+            // 1. Get the authoritative list of miners from the config
+            const miners = await apiCall('/api/miners');
+            const tableBody = document.getElementById('miners-table').getElementsByTagName('tbody')[0];
+            const existingRows = new Map([...tableBody.querySelectorAll('tr')].map(tr => [tr.dataset.ip, tr]));
+
+            // 2. Use a Promise.all to fetch live data concurrently
+            const liveDataPromises = miners.map(miner => apiCall(`/api/miner-info/${miner.ip}`).catch(e => null));
+            const liveDataResults = await Promise.all(liveDataPromises);
+
+            // 3. Loop through the authoritative list and update/add rows
+            miners.forEach((miner, index) => {
+                const liveData = liveDataResults[index];
+                let row = existingRows.get(miner.ip);
+
+                if (editingMiners.has(miner.ip)) {
+                    existingRows.delete(miner.ip); // Account for the row so it's not deleted
+                    return; // Skip updates for rows currently being edited
+                }
+
+                if (!row) {
+                    // Miner is new, create a full row.
+                    row = tableBody.insertRow();
+                    row.setAttribute('data-ip', miner.ip);
+                    row.innerHTML = `
+                        <td class="px-6 py-4" contenteditable="false"></td>
+                        <td class="px-6 py-4" contenteditable="false"></td>
+                        <td class="px-6 py-4"></td>
+                        <td class="px-6 py-4"></td>
+                        <td class="px-6 py-4"></td>
+                        <td class="px-6 py-4"></td>
+                        <td class="px-6 py-4"></td>
+                        <td class="px-6 py-4"></td>
+                        <td class="px-6 py-4"></td>
+                    `;
+                    row.addEventListener('contextmenu', showContextMenu);
+                }
+
+                // Update cell content regardless of whether it's new or existing
+                const cells = row.cells;
+                cells[0].textContent = miner.nickname || '';
+                cells[2].textContent = miner.ip;
+
+                if (liveData) {
+                    // Prioritize the type from config, but allow live data to fill it in if it's generic.
+                    let displayType = miner.type || 'Unknown';
+                    const lowerCaseType = displayType.toLowerCase();
+                    if ((lowerCaseType === 'unknown' || lowerCaseType === 'offline') && liveData.type) {
+                        displayType = liveData.type;
+                    }
+                    cells[1].textContent = displayType;
+
+                    cells[3].textContent = liveData.frequency || '-';
+                    cells[4].textContent = liveData.coreVoltage || '-';
+                    cells[5].textContent = liveData.temp ? `${liveData.temp.toFixed(1)}°C` : '-';
+                    cells[6].textContent = liveData.vrTemp ? `${liveData.vrTemp.toFixed(1)}°C` : '-';
+                    cells[7].textContent = liveData.hashRate ? `${liveData.hashRate.toFixed(2)} GH/s` : '-';
+                    cells[8].textContent = liveData.power ? `${liveData.power.toFixed(2)} W` : '-';
+                } else {
+                    // Miner is offline or API failed
+                    cells[1].textContent = miner.type || 'Offline';
+                     for (let i = 3; i <= 8; i++) cells[i].textContent = '-';
+                }
+                
+                existingRows.delete(miner.ip);
+            });
+
+            // 4. Remove any rows that are left in the map
+            for (const [ip, row] of existingRows) {
+                row.remove();
+            }
+
+        } catch (error) {
+            console.error("Unified refresh failed:", error);
+            logMessage("Failed to refresh miner data.", "error");
+        }
+    }
+    
+    async function fetchLogs() {
+        try {
+            const logs = await apiCall('/api/logs');
+            const logOutput = document.getElementById('log-output');
+            logOutput.innerHTML = logs.map(l => {
+                 const levelMatch = l.match(/\[(.*?)\]/g);
+                 if (levelMatch && levelMatch[1]) {
+                    const level = levelMatch[1].replace(/[\[\]]/g, '').toLowerCase();
+                    const levelColors = { info: 'text-gray-300', success: 'text-green-400', warning: 'text-yellow-400', error: 'text-red-400' };
+                    const colorClass = levelColors[level] || 'text-gray-300';
+                    return `<div class="${colorClass}">${l}</div>`;
+                 }
+                 return `<div>${l}</div>`; // Fallback for logs without level
+            }).join('');
+            logOutput.scrollTop = logOutput.scrollHeight;
+        } catch (error) { /* Already logged in apiCall */ }
+    }
+
+    // --- Main Buttons ---
+    async function scanNetwork() {
+        const start_ip = document.getElementById('start-ip').value;
+        const end_ip = document.getElementById('end-ip').value;
+        logMessage(`Starting network scan from ${start_ip} to ${end_ip}...`, 'info');
+        try {
+            await apiCall('/api/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ start_ip, end_ip })
+            });
+            logMessage('Scan initiated. New miners will appear in the list upon discovery.', 'success');
+        } finally {
+            closeModal('scan-modal');
+        }
+    }
+
+    async function addMiner() {
+        const nickname = document.getElementById('add-nickname').value;
+        const ip = document.getElementById('add-ip').value;
+        if (!ip) { alert('IP address is required.'); return; }
+        try {
+            await apiCall('/api/miners', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nickname, ip })
+            });
+            logMessage(`Added miner ${nickname || ip}.`, 'success');
+            unifiedRefresh();
+        } finally {
+            closeModal('add-miner-modal');
+        }
+    }
+
+    async function saveSettings() {
+        const tableBody = document.getElementById('miners-table').getElementsByTagName('tbody')[0];
+        const rows = [...tableBody.getElementsByTagName('tr')];
+        const miners = [];
+        for (const row of rows) {
+            const cells = row.getElementsByTagName('td');
+            miners.push({
+                nickname: cells[0].textContent,
+                type: cells[1].textContent,
+                ip: cells[2].textContent
+            });
+        }
+        
+        try {
+            await apiCall('/api/miners/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ miners })
+            });
+            logMessage('Successfully saved miner configuration.', 'success');
+            rows.forEach(row => {
+               if (!editingMiners.has(row.dataset.ip)) {
+                    row.cells[0].contentEditable = 'false';
+                    row.cells[1].contentEditable = 'false';
+               }
+            });
+        } catch (error) { /* Already logged in apiCall */ }
+    }
+
+    async function startAutotuning() {
+        try {
+            await apiCall('/api/autotune/start', { method: 'POST' });
+            logMessage('Autotuning started for enabled miners.', 'success');
+            document.getElementById('start-autotuner-btn').classList.add('opacity-50', 'cursor-not-allowed');
+        } catch (error) { /* Already logged in apiCall */ }
+    }
+
+    async function stopAutotuning() {
+        try {
+            await apiCall('/api/autotune/stop', { method: 'POST' });
+            logMessage('Stopping all autotuning processes...', 'warning');
+            document.getElementById('start-autotuner-btn').classList.remove('opacity-50', 'cursor-not-allowed');
+        } catch (error) { /* Already logged in apiCall */ }
+    }
+
+    // --- Context Menu & Editing ---
+    function showContextMenu(e) {
+        e.preventDefault();
+        const menu = document.getElementById('context-menu');
+        contextMenuIp = e.currentTarget.getAttribute('data-ip');
+        menu.style.top = `${e.pageY}px`;
+        menu.style.left = `${e.pageX}px`;
+        menu.style.display = 'block';
+    }
+
+    async function saveEditedMiner(ip) {
+        if (!editingMiners.has(ip)) return;
+
+        const row = document.querySelector(`tr[data-ip="${ip}"]`);
+        if (!row) return;
+
+        editingMiners.delete(ip);
+
+        const nicknameCell = row.cells[0];
+        const typeCell = row.cells[1];
+        nicknameCell.classList.remove('editing');
+        typeCell.classList.remove('editing');
+        nicknameCell.contentEditable = 'false';
+        typeCell.contentEditable = 'false';
+        
+        logMessage(`Saving changes for ${ip}...`, 'info');
+        try {
+            await saveSettings();
+        } catch (error) {
+            logMessage(`Failed to save changes for ${ip}. Reverting.`, 'error');
+        }
+    }
+
+    function editMinerSettings() {
+        if (!contextMenuIp) return;
+        const row = document.querySelector(`tr[data-ip="${contextMenuIp}"]`);
+        
+        if (row && !editingMiners.has(contextMenuIp)) {
+            editingMiners.add(contextMenuIp);
+
+            const nicknameCell = row.cells[0];
+            const typeCell = row.cells[1];
+
+            nicknameCell.classList.add('editing');
+            typeCell.classList.add('editing');
+
+            nicknameCell.contentEditable = 'true';
+            typeCell.contentEditable = 'true';
+
+            const handleBlur = () => {
+                setTimeout(() => {
+                    const activeElement = document.activeElement;
+                    if (activeElement !== nicknameCell && activeElement !== typeCell) {
+                       saveEditedMiner(contextMenuIp);
+                    }
+                }, 100); 
+            };
+            
+            const handleKeydown = (event) => {
+                 if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.target.blur();
+                 } else if (event.key === 'Escape') {
+                    editingMiners.delete(contextMenuIp);
+                    nicknameCell.classList.remove('editing');
+                    typeCell.classList.remove('editing');
+                    nicknameCell.contentEditable = 'false';
+                    typeCell.contentEditable = 'false';
+                    logMessage(`Canceled editing for ${contextMenuIp}.`, 'info');
+                    unifiedRefresh(); // Force a refresh to restore original values
+                 }
+            };
+
+            nicknameCell.addEventListener('blur', handleBlur, { once: true });
+            typeCell.addEventListener('blur', handleBlur, { once: true });
+            nicknameCell.addEventListener('keydown', handleKeydown);
+            typeCell.addEventListener('keydown', handleKeydown);
+
+            nicknameCell.focus();
+            logMessage(`Editing mode for ${contextMenuIp}. Press Enter or click away to save. Press Esc to cancel.`, 'info');
+        }
+        document.getElementById('context-menu').style.display = 'none';
+    }
+
+    async function refreshMiner() {
+        if (!contextMenuIp) return;
+        logMessage(`Refreshing data for ${contextMenuIp}...`, 'info');
+        const row = document.querySelector(`tr[data-ip="${contextMenuIp}"]`);
+        if (!row) return;
+
+        try {
+            const data = await apiCall(`/api/miner-info/${contextMenuIp}`);
+            const cells = row.cells;
+            cells[1].textContent = data.type || 'Unknown';
+            cells[3].textContent = data.frequency || '-';
+            cells[4].textContent = data.coreVoltage || '-';
+            cells[5].textContent = data.temp ? `${data.temp.toFixed(1)}°C` : '-';
+            cells[6].textContent = data.vrTemp ? `${data.vrTemp.toFixed(1)}°C` : '-';
+            cells[7].textContent = data.hashRate ? `${data.hashRate.toFixed(2)} GH/s` : '-';
+            cells[8].textContent = data.power ? `${data.power.toFixed(2)} W` : '-';
+        } catch (error) {
+            logMessage(`Failed to refresh miner ${contextMenuIp}. It may be offline.`, 'warning');
+        }
+        document.getElementById('context-menu').style.display = 'none';
+    }
+
+    async function restartMiner() {
+        if (contextMenuIp) {
+            await apiCall(`/api/restart-miner/${contextMenuIp}`, { method: 'POST' });
+        }
+        document.getElementById('context-menu').style.display = 'none';
+    }
+    async function openMinerWebUI() {
+        if (contextMenuIp) {
+            await apiCall(`/api/open-web-ui/${contextMenuIp}`);
+        }
+        document.getElementById('context-menu').style.display = 'none';
+    }
+    async function deleteMiner() {
+        if (contextMenuIp && confirm(`Are you sure you want to delete miner ${contextMenuIp}?`)) {
+            await apiCall(`/api/miners/${contextMenuIp}`, { method: 'DELETE' });
+            unifiedRefresh();
+        }
+        document.getElementById('context-menu').style.display = 'none';
+    }
+
+    // --- Modals Logic ---
+    function openModal(id) { document.getElementById(id).style.display = 'block'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function openScanModal() { openModal('scan-modal'); }
+    function openAddMinerModal() { openModal('add-miner-modal'); }
+
+    async function openGlobalSettings() {
+        try {
+            configData = await apiCall('/api/settings');
+            const form = document.getElementById('global-settings-form');
+            form.innerHTML = `
+                <div class="grid grid-cols-2 gap-4">
+                <p>Voltage Step (mV): <input type="number" id="gs-voltage_step" value="${configData.voltage_step || 10}"></p>
+                <p>Frequency Step (MHz): <input type="number" id="gs-frequency_step" value="${configData.frequency_step || 5}"></p>
+                <p>Monitor Interval (sec): <input type="number" id="gs-monitor_interval" value="${configData.monitor_interval || 10}"></p>
+                <p>Default Target Temp (°C): <input type="number" id="gs-default_target_temp" value="${configData.default_target_temp || 85}"></p>
+                <p>Temp Tolerance (°C): <input type="number" id="gs-temp_tolerance" value="${configData.temp_tolerance || 2}"></p>
+                <p>Autotuner UI Refresh (sec): <input type="number" id="gs-refresh_interval" value="${configData.refresh_interval || 5}"></p>
+                <p>Daily Reset Time (HH:MM): <input type="text" id="gs-daily_reset_time" value="${configData.daily_reset_time || '03:00'}"></p>
+                <p>Flatline Repeat Count: <input type="number" id="gs-flatline_hashrate_repeat_count" value="${configData.flatline_hashrate_repeat_count || 5}"></p>
+                <label class="flex items-center"><input type="checkbox" id="gs-enforce_safe_pairing" ${configData.enforce_safe_pairing ? 'checked' : ''}> Enforce Safe Tiers</label>
+                <label class="flex items-center"><input type="checkbox" id="gs-daily_reset_enabled" ${configData.daily_reset_enabled ? 'checked' : ''}> Enable Daily Reset</label>
+                <label class="flex items-center"><input type="checkbox" id="gs-flatline_detection_enabled" ${configData.flatline_detection_enabled ? 'checked' : ''}> Enable Flatline Detection</label>
+                </div>`;
+            openModal('global-settings-modal');
+        } catch (error) { /* Already logged */ }
+    }
+
+    async function saveGlobalSettings() {
+        configData.voltage_step = parseInt(document.getElementById('gs-voltage_step').value);
+        configData.frequency_step = parseInt(document.getElementById('gs-frequency_step').value);
+        configData.monitor_interval = parseInt(document.getElementById('gs-monitor_interval').value);
+        configData.default_target_temp = parseInt(document.getElementById('gs-default_target_temp').value);
+        configData.temp_tolerance = parseInt(document.getElementById('gs-temp_tolerance').value);
+        configData.refresh_interval = parseInt(document.getElementById('gs-refresh_interval').value);
+        configData.daily_reset_time = document.getElementById('gs-daily_reset_time').value;
+        configData.flatline_hashrate_repeat_count = parseInt(document.getElementById('gs-flatline_hashrate_repeat_count').value);
+        configData.enforce_safe_pairing = document.getElementById('gs-enforce_safe_pairing').checked;
+        configData.daily_reset_enabled = document.getElementById('gs-daily_reset_enabled').checked;
+        configData.flatline_detection_enabled = document.getElementById('gs-flatline_detection_enabled').checked;
+        
+        try {
+            await apiCall('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configData)
+            });
+            logMessage('Global settings saved.', 'success');
+        } finally {
+            closeModal('global-settings-modal');
+        }
+    }
+
+    async function openAutotunerSettings() {
+        try {
+            configData = await apiCall('/api/settings');
+            const miners = configData.miners || [];
+            const form = document.getElementById('autotuner-settings-form');
+            let tableHTML = `<table class="w-full text-sm text-left text-gray-400">
+                <thead class="text-xs uppercase bg-gray-700 text-gray-300">
+                    <tr>
+                        <th class="p-2">Enable</th>
+                        <th class="p-2">Miner</th>
+                        <th class="p-2">Min Freq</th>
+                        <th class="p-2">Max Freq</th>
+                        <th class="p-2">Start Freq</th>
+                        <th class="p-2">Min Volt</th>
+                        <th class="p-2">Max Volt</th>
+                        <th class="p-2">Start Volt</th>
+                        <th class="p-2">Max Temp</th>
+                        <th class="p-2">Max Watts</th>
+                        <th class="p-2">Max VR Temp</th>
+                        <th class="p-2">Actions</th>
+                    </tr>
+                </thead><tbody>`;
+            miners.forEach((miner, i) => {
+                tableHTML += `<tr class="border-b border-gray-700">
+                    <td class="p-2"><input type="checkbox" id="at-enabled-${i}" ${miner.enabled ? 'checked' : ''}></td>
+                    <td class="p-2">${miner.nickname}(${miner.ip})</td>
+                    <td class="p-2"><input type="number" id="at-min_freq-${i}" value="${miner.min_freq || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-max_freq-${i}" value="${miner.max_freq || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-start_freq-${i}" value="${miner.start_freq || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-min_volt-${i}" value="${miner.min_volt || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-max_volt-${i}" value="${miner.max_volt || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-start_volt-${i}" value="${miner.start_volt || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-max_temp-${i}" value="${miner.max_temp || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-max_watts-${i}" value="${miner.max_watts || ''}" class="w-20"></td>
+                    <td class="p-2"><input type="number" id="at-max_vr_temp-${i}" value="${miner.max_vr_temp || ''}" class="w-20"></td>
+                    <td class="p-2">
+                        <div class="flex gap-1">
+                            <button onclick="copyAutotunerRow(${i})" class="btn btn-small">Copy</button>
+                            <button onclick="pasteAutotunerRow(${i})" class="btn btn-small">Paste</button>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+            form.innerHTML = tableHTML + '</tbody></table>';
+            openModal('autotuner-settings-modal');
+        } catch (error) { /* Already logged */ }
+    }
+
+    function copyAutotunerRow(index) {
+        autotunerClipboard = {
+            min_freq: document.getElementById(`at-min_freq-${index}`).value,
+            max_freq: document.getElementById(`at-max_freq-${index}`).value,
+            start_freq: document.getElementById(`at-start_freq-${index}`).value,
+            min_volt: document.getElementById(`at-min_volt-${index}`).value,
+            max_volt: document.getElementById(`at-max_volt-${index}`).value,
+            start_volt: document.getElementById(`at-start_volt-${index}`).value,
+            max_temp: document.getElementById(`at-max_temp-${index}`).value,
+            max_watts: document.getElementById(`at-max_watts-${index}`).value,
+            max_vr_temp: document.getElementById(`at-max_vr_temp-${index}`).value,
+        };
+        logMessage(`Copied settings from row ${index + 1}.`, 'info');
+    }
+
+    function pasteAutotunerRow(index) {
+        if (!autotunerClipboard) {
+            logMessage('Clipboard is empty. Please copy a row first.', 'warning');
+            return;
+        }
+        document.getElementById(`at-min_freq-${index}`).value = autotunerClipboard.min_freq;
+        document.getElementById(`at-max_freq-${index}`).value = autotunerClipboard.max_freq;
+        document.getElementById(`at-start_freq-${index}`).value = autotunerClipboard.start_freq;
+        document.getElementById(`at-min_volt-${index}`).value = autotunerClipboard.min_volt;
+        document.getElementById(`at-max_volt-${index}`).value = autotunerClipboard.max_volt;
+        document.getElementById(`at-start_volt-${index}`).value = autotunerClipboard.start_volt;
+        document.getElementById(`at-max_temp-${index}`).value = autotunerClipboard.max_temp;
+        document.getElementById(`at-max_watts-${index}`).value = autotunerClipboard.max_watts;
+        document.getElementById(`at-max_vr_temp-${index}`).value = autotunerClipboard.max_vr_temp;
+        logMessage(`Pasted settings to row ${index + 1}.`, 'info');
+    }
+    
+    async function saveAutotunerSettings() {
+        const miners = configData.miners || [];
+        miners.forEach((miner, i) => {
+            miner.enabled = document.getElementById(`at-enabled-${i}`).checked;
+            miner.min_freq = parseInt(document.getElementById(`at-min_freq-${i}`).value) || null;
+            miner.max_freq = parseInt(document.getElementById(`at-max_freq-${i}`).value) || null;
+            miner.start_freq = parseInt(document.getElementById(`at-start_freq-${i}`).value) || null;
+            miner.min_volt = parseInt(document.getElementById(`at-min_volt-${i}`).value) || null;
+            miner.max_volt = parseInt(document.getElementById(`at-max_volt-${i}`).value) || null;
+            miner.start_volt = parseInt(document.getElementById(`at-start_volt-${i}`).value) || null;
+            miner.max_temp = parseInt(document.getElementById(`at-max_temp-${i}`).value) || null;
+            miner.max_watts = parseInt(document.getElementById(`at-max_watts-${i}`).value) || null;
+            miner.max_vr_temp = parseInt(document.getElementById(`at-max_vr_temp-${i}`).value) || null;
+        });
+        
+        try {
+            await apiCall('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configData)
+            });
+            logMessage('Autotuner settings saved.', 'success');
+        } finally {
+            closeModal('autotuner-settings-modal');
+        }
+    }
+
+    // --- Window Load & Intervals ---
+    window.onload = function() {
+        unifiedRefresh();
+        fetchLogs();
+
+        // Hide context menu on click outside
+        document.addEventListener('click', (e) => {
+            if (!document.getElementById('context-menu').contains(e.target)) {
+                document.getElementById('context-menu').style.display = 'none';
+            }
+        });
+
+        // Set up periodic refresh
+        setInterval(fetchLogs, 5000); 
+        setInterval(unifiedRefresh, 15000); 
+    };
+</script>
+
+</body>
+</html>
+
